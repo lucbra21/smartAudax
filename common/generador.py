@@ -5,7 +5,7 @@ from dotenv import load_dotenv
 import os
 
 # Configura tu token de API de ChatGPT
-load_dotenv("streamlit.env")
+load_dotenv()
 api_key = os.getenv("TOKEN")
 if not api_key:
     st.error("API key not found in streamlit.env file. Please ensure TOKEN is set in streamlit.env")
