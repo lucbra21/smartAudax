@@ -6,12 +6,8 @@ import os
 
 # Configura tu token de API de ChatGPT
 load_dotenv()
-api_key = os.getenv("TOKEN")
-if not api_key:
-    st.error("API key not found in streamlit.env file. Please ensure TOKEN is set in streamlit.env")
-    st.stop()
-openai.api_key = api_key
 
+openai.api_key = os.environ.get("OPENAI_API_KEY")
 def chatgpt_api(prompt, data, max_rows=40):
     """
     Envía a la API de ChatGPT un prompt junto con un resumen de los datos.
@@ -57,7 +53,7 @@ def chatgpt_api(prompt, data, max_rows=40):
 
     # Llamada a la API de OpenAI
     response = openai.ChatCompletion.create(
-        model="gpt-3.5-turbo",
+        model="gpt-4o-mini",
         messages=[
             {"role": "system", "content": """Eres un Director Técnico experto en fútbol, con amplia experiencia en análisis 
             táctico y datos. Tu objetivo es proporcionar análisis técnicos detallados y recomendaciones específicas basadas 
