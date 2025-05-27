@@ -231,5 +231,8 @@ def main():
         response_transiciones = chatgpt_api(prompt_transiciones, player_match_stats_df)
         st.write(response_transiciones)
 
+# if __name__ == "__main__":
+#     main()
 if __name__ == "__main__":
-    main()
+    port = int(os.environ.get("PORT", 8501))
+    st.run(host="0.0.0.0", port=port)
