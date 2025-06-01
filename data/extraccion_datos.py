@@ -83,6 +83,7 @@ def extract_team_match_stats(player_match_stats):
     """
     # Primero, agrupamos las estadísticas sumando o usando el agregado apropiado
     # Se eliminan las columnas duplicadas y se corrigen los métodos de agregación
+    print(f"Partido en team_match_stats")
     team_match_stats = player_match_stats.groupby(['match_id', 'team_name',
                                                'team_id', 'account_id']).agg({'player_match_minutes':'sum',
                                                                               'player_match_np_xg_per_shot':'sum',
@@ -257,5 +258,75 @@ def main():
     export_csv(events, 'outs_data/sb_events.csv')
     export_csv(lineups, 'outs_data/sb_lineups.csv')
     
+def extract_matches_only(creds):
+    """
+    Extrae únicamente los datos de matches para actualizar la lista disponible.
+    """
+    matches = extract_matches(creds)
+    return matches
+
+def extract_match_specific_data(creds, match_id):
+    """
+    Extrae datos específicos para un partido único sin almacenar en archivos.
+    
+    Args:
+        creds: Credenciales de la API
+        match_id: ID del partido específico
+        
+    Returns:
+        dict: Diccionario con todos los datos del partido
+    """
+    # Obtener datos específicos del partido
+    player_match_stats = extract_player_match_stats(creds, [match_id])
+    team_match_stats = extract_team_match_stats(player_match_stats)
+    events = extract_events(creds, [match_id])
+    lineups = extract_lineups(creds, [match_id])
+
+    match_data = {
+        "player_match_stats": player_match_stats,
+        "team_match_stats": team_match_stats,
+        "events": events,
+        "lineups": lineups
+    }
+    
+    return match_data
+
+def update_matches_only():
+    """
+    Actualiza únicamente el archivo de matches sin extraer todo el resto de datos.
+    """
+    creds = get_credentials()
+    matches = extract_matches_only(creds)
+    export_csv(matches, 'outs_data/sb_matches.csv')
+    print("Archivo de matches actualizado exitosamente.")
+
+def extract_historical_team_stats(creds, match_ids):
+    """
+    Extrae estadísticas de equipo para múltiples partidos específicos.
+    
+    Args:
+        creds: Credenciales de la API
+        match_ids: Lista de IDs de partidos
+        
+    Returns:
+        pd.DataFrame: DataFrame con estadísticas de equipo de todos los partidos
+    """
+    all_team_stats = pd.DataFrame()
+    
+    for match_id in match_ids:
+        try:
+            print(f'Obteniendo estadísticas históricas para partido {match_id}...')
+            # Obtener estadísticas de jugadores para este partido
+            player_match_stats = extract_player_match_stats(creds, [match_id])
+            # Convertir a estadísticas de equipo
+            team_match_stats = extract_team_match_stats(player_match_stats)
+            # Concatenar con el DataFrame principal
+            all_team_stats = pd.concat([all_team_stats, team_match_stats], ignore_index=True)
+        except Exception as e:
+            print(f'Error al obtener datos del partido {match_id}: {e}')
+            continue
+    
+    return all_team_stats
+
 if __name__ == '__main__':
     main()

@@ -1,14 +1,15 @@
 import streamlit as st
 import pandas as pd
-import openai
+from openai import OpenAI
 from dotenv import load_dotenv
 import os
 
 # Configura tu token de API de ChatGPT
 load_dotenv()
 
-openai.api_key = os.environ.get("OPENAI_API_KEY")
-def chatgpt_api(prompt, data, max_rows=40):
+client = OpenAI(api_key=os.getenv("OPENAI_API_KEY"))
+
+def chatgpt_api(prompt, data, max_rows=60):
     """
     Envía a la API de ChatGPT un prompt junto con un resumen de los datos.
     
@@ -52,7 +53,7 @@ def chatgpt_api(prompt, data, max_rows=40):
     message = f"{prompt}\n\nResumen de datos:\n{data_summary}"
 
     # Llamada a la API de OpenAI
-    response = openai.ChatCompletion.create(
+    response = client.chat.completions.create(
         model="gpt-4o-mini",
         messages=[
             {"role": "system", "content": """Eres un Director Técnico experto en fútbol, con amplia experiencia en análisis 
@@ -66,15 +67,21 @@ def chatgpt_api(prompt, data, max_rows=40):
         max_tokens=800
     )
 
-    return response.choices[0].message['content']
+    return response.choices[0].message.content
 
 def generate_prompt_matches():
     return """
-    Como Director Técnico de Audax Italiano, proporciona un análisis técnico conciso del partido, enfocándote en:
+    Como Director Técnico, proporciona un análisis técnico conciso del partido. 
+    
+    IMPORTANTE: Adapta tu análisis según el tipo de partido:
+    - Si AUDAX ITALIANO participa: Enfócate en el rendimiento de Audax vs. el rival
+    - Si Audax NO participa: Análisis general comparando ambos equipos
+    
+    Estructura tu análisis en:
 
     1. Contexto Táctico (máximo 3 líneas)
        - Estructura inicial y adaptaciones clave
-       - Objetivos tácticos principales
+       - Objetivos tácticos principales del/los equipo(s)
 
     2. Desarrollo del Partido (máximo 3 líneas)
        - Momentos clave con datos específicos
@@ -82,11 +89,11 @@ def generate_prompt_matches():
 
     3. Evaluación del Rendimiento (máximo 3 líneas)
        - Métricas clave que respaldan el análisis
-       - Comparación con el modelo de juego deseado
+       - Comparación con objetivos esperados
 
-    4. Recomendaciones Técnicas (máximo 3 líneas)
-       - Ajustes específicos basados en datos
-       - Áreas de mejora con métricas concretas
+    4. Conclusiones Técnicas (máximo 3 líneas)
+       - Puntos destacados del rendimiento
+       - Aspectos más relevantes del partido
 
     Utiliza datos específicos del partido para respaldar cada punto. 
     Limita cada sección a 3 líneas y enfócate en métricas concretas.
@@ -94,145 +101,120 @@ def generate_prompt_matches():
 
 def generate_prompt_ataque():
     return """
-    Como Director Técnico de Audax Italiano, analiza el rendimiento ofensivo con datos concretos:
+    Como Director Técnico, analiza el rendimiento ofensivo. 
+    
+    IMPORTANTE: Adapta tu análisis según el contexto:
+    - Si AUDAX ITALIANO participa: Análisis detallado del ataque de Audax vs. promedio histórico
+    - Si Audax NO participa: Comparación ofensiva entre ambos equipos
+
+    Estructura tu análisis en:
 
     1. Estructura Ofensiva (máximo 3 líneas)
-       - Métricas de organización posicional
-       - Efectividad en creación de espacios
+       - Organización posicional y espacios generados
+       - Efectividad en creación de oportunidades
 
-    2. Transiciones Ofensivas (máximo 3 líneas)
-       - Velocidad de transición (datos específicos)
-       - Efectividad en aprovechamiento de espacios
+    2. Progresión Ofensiva (máximo 3 líneas)
+       - Calidad de transiciones hacia el ataque
+       - Aprovechamiento de espacios en campo rival
 
     3. Finalización (máximo 3 líneas)
-       - Estadísticas de oportunidades creadas
+       - Estadísticas de oportunidades creadas y convertidas
        - Efectividad en la definición
 
     4. Recomendaciones Técnicas (máximo 3 líneas)
-       - Ajustes específicos con métricas de referencia
-       - Áreas de mejora con datos concretos
+       - Ajustes específicos basados en datos
+       - Áreas de mejora con métricas concretas
 
     Utiliza datos específicos para cada punto. Limita cada sección a 3 líneas.
+    Si hay datos históricos disponibles, compara con el promedio de los últimos 5 partidos.
     """
 
 def generate_prompt_defensa():
     return """
-    Como Director Técnico de Audax Italiano, analiza el rendimiento defensivo con datos concretos:
+    Como Director Técnico, analiza el rendimiento defensivo.
+    
+    IMPORTANTE: Adapta tu análisis según el contexto:
+    - Si AUDAX ITALIANO participa: Análisis detallado de la defensa de Audax vs. promedio histórico
+    - Si Audax NO participa: Comparación defensiva entre ambos equipos
+
+    Estructura tu análisis en:
 
     1. Organización Defensiva (máximo 3 líneas)
-       - Métricas de estructura defensiva
-       - Efectividad en coberturas
+       - Estructura y compactidad del bloque defensivo
+       - Efectividad en la presión y recuperación
 
-    2. Transiciones Defensivas (máximo 3 líneas)
-       - Velocidad de transición (datos específicos)
-       - Efectividad en recuperación
+    2. Duelos Defensivos (máximo 3 líneas)
+       - Rendimiento en tackles e intercepciones
+       - Eficacia en duelos individuales
 
-    3. Presión y Recuperación (máximo 3 líneas)
-       - Estadísticas de presión efectiva
-       - Eficiencia en recuperación de balón
+    3. Transición Defensiva (máximo 3 líneas)
+       - Velocidad y organización tras pérdida
+       - Presión inmediata y repliegue
 
     4. Recomendaciones Técnicas (máximo 3 líneas)
-       - Ajustes específicos con métricas de referencia
-       - Áreas de mejora con datos concretos
+       - Ajustes específicos basados en datos
+       - Áreas de mejora con métricas concretas
 
     Utiliza datos específicos para cada punto. Limita cada sección a 3 líneas.
+    Si hay datos históricos disponibles, compara con el promedio de los últimos 5 partidos.
     """
 
 def generate_prompt_pelota_parada():
     return """
-    Como Director Técnico de Audax Italiano, analiza el rendimiento en pelota parada con datos concretos:
+    Como Director Técnico, analiza el rendimiento en situaciones de pelota parada.
+    
+    IMPORTANTE: Adapta tu análisis según el contexto:
+    - Si AUDAX ITALIANO participa: Análisis detallado de pelota parada de Audax vs. promedio histórico
+    - Si Audax NO participa: Comparación de pelota parada entre ambos equipos
 
-    1. Saques de Esquina (máximo 3 líneas)
-       - Estadísticas de efectividad
-       - Métricas de organización
+    Estructura tu análisis en:
 
-    2. Tiros Libres (máximo 3 líneas)
-       - Datos de ejecución
-       - Efectividad en aprovechamiento
+    1. Efectividad Ofensiva (máximo 3 líneas)
+       - Rendimiento en córners y tiros libres
+       - Calidad de centros y remates
 
-    3. Saques de Banda (máximo 3 líneas)
-       - Métricas de progresión
-       - Efectividad en creación de peligro
+    2. Solidez Defensiva (máximo 3 líneas)
+       - Organización en la defensa de pelotas paradas
+       - Efectividad en el despeje y marcaje
+
+    3. Variaciones Tácticas (máximo 3 líneas)
+       - Diferentes esquemas utilizados
+       - Creatividad y sorpresa en las jugadas
 
     4. Recomendaciones Técnicas (máximo 3 líneas)
-       - Ajustes específicos con métricas de referencia
-       - Áreas de mejora con datos concretos
+       - Ajustes específicos basados en datos
+       - Oportunidades de mejora
 
     Utiliza datos específicos para cada punto. Limita cada sección a 3 líneas.
+    Si hay datos históricos disponibles, compara con el promedio de los últimos 5 partidos.
     """
 
 def generate_prompt_transiciones():
     return """
-    Como Director Técnico de Audax Italiano, analiza las transiciones con datos concretos:
+    Como Director Técnico, analiza el rendimiento en las transiciones del juego.
+    
+    IMPORTANTE: Adapta tu análisis según el contexto:
+    - Si AUDAX ITALIANO participa: Análisis detallado de transiciones de Audax vs. promedio histórico
+    - Si Audax NO participa: Comparación de transiciones entre ambos equipos
+
+    Estructura tu análisis en:
 
     1. Transiciones Ofensivas (máximo 3 líneas)
-       - Velocidad de transición (datos específicos)
-       - Efectividad en aprovechamiento
+       - Velocidad y efectividad en contragolpes
+       - Progresión hacia campo rival
 
     2. Transiciones Defensivas (máximo 3 líneas)
-       - Métricas de recuperación
-       - Efectividad en contención
+       - Organización tras pérdida del balón
+       - Presión inmediata y recuperación
 
-    3. Cambios de Fase (máximo 3 líneas)
-       - Estadísticas de adaptación
-       - Efectividad en implementación
+    3. Gestión de Espacios (máximo 3 líneas)
+       - Aprovechamiento de espacios en transición
+       - Coordinación entre líneas
 
     4. Recomendaciones Técnicas (máximo 3 líneas)
-       - Ajustes específicos con métricas de referencia
-       - Áreas de mejora con datos concretos
+       - Ajustes específicos basados en datos
+       - Oportunidades de mejora en transiciones
 
     Utiliza datos específicos para cada punto. Limita cada sección a 3 líneas.
+    Si hay datos históricos disponibles, compara con el promedio de los últimos 5 partidos.
     """
-
-# Función auxiliar para cargar un CSV
-def load_csv(file_path):
-    try:
-        df = pd.read_csv(file_path)
-        return df
-    except Exception as e:
-        st.error(f"Error al cargar {file_path}: {e}")
-        return None
-
-# Función principal de la app Streamlit
-def main():
-    st.title("Análisis de Datos con ChatGPT API")
-    st.write("Se mostrarán los prompts generados y las respuestas de ChatGPT para cada CSV.")
-    
-    # Cargar CSVs generados (ajusta las rutas según corresponda)
-    matches_df = load_csv("outs_data/sb_matches.csv")
-    events_df = load_csv("outs_data/sb_events.csv")
-    team_match_stats_df = load_csv("outs_data/sb_team_match_stats.csv")
-    player_match_stats_df = load_csv("outs_data/sb_player_match_stats.csv")
-    
-    # Generar los prompts
-    prompt_ataque = generate_prompt_ataque()
-    prompt_defensa = generate_prompt_defensa()
-    prompt_pelota_parada = generate_prompt_pelota_parada()
-    prompt_transiciones = generate_prompt_transiciones()
-    
-    # Llamar a la API de ChatGPT para cada CSV y mostrar la respuesta
-    st.subheader("Respuesta para Ataque")
-    if matches_df is not None:
-        response_ataque = chatgpt_api(prompt_ataque, matches_df)
-        st.write(response_ataque)
-    
-    st.subheader("Respuesta para Defensa")
-    if events_df is not None:
-        response_defensa = chatgpt_api(prompt_defensa, events_df)
-        st.write(response_defensa)
-    
-    st.subheader("Respuesta para Pelota Parada")
-    if team_match_stats_df is not None:
-        response_pelota_parada = chatgpt_api(prompt_pelota_parada, team_match_stats_df)
-        st.write(response_pelota_parada)
-
-    st.subheader("Respuesta para Transiciones")
-    if player_match_stats_df is not None:
-        response_transiciones = chatgpt_api(prompt_transiciones, player_match_stats_df)
-        st.write(response_transiciones)
-
-# if __name__ == "__main__":
-#     main()
-if __name__ == "__main__":
-    port = int(os.environ.get("PORT", 8501))
-    st.run(host="0.0.0.0", port=port)
