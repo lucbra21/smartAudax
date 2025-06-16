@@ -334,21 +334,42 @@ def generar_analisis_audax(audax_events, rival_events, audax_team_stats, rival_t
 
     # 3. ANÁLISIS DE PELOTA PARADA DE AUDAX
     set_piece_events = audax_events[
-        (audax_events["type"] == "Free Kick") | 
-        (audax_events["type"] == "Corner") | 
+        (audax_events["type"] == "Foul Won") | 
+        (audax_events["type"] == "Pass") |  # Para córners y tiros libres
         (audax_events["type"] == "Throw In")
-    ]
+    ].copy()
+    
+    # Identificar córners (pases desde las esquinas)
+    corners = set_piece_events[
+        (set_piece_events["type"] == "Pass") &
+        (
+            # Esquina superior derecha
+            ((set_piece_events["location"].apply(lambda x: float(x[0]) if isinstance(x, list) and len(x) >= 2 else 0) >= 120) &
+             (set_piece_events["location"].apply(lambda x: float(x[1]) if isinstance(x, list) and len(x) >= 2 else 0) == 80)) |
+            # Esquina superior izquierda
+            ((set_piece_events["location"].apply(lambda x: float(x[0]) if isinstance(x, list) and len(x) >= 2 else 0) >= 120) &
+             (set_piece_events["location"].apply(lambda x: float(x[1]) if isinstance(x, list) and len(x) >= 2 else 0) == 0)) |
+            # Esquina inferior derecha
+            ((set_piece_events["location"].apply(lambda x: float(x[0]) if isinstance(x, list) and len(x) >= 2 else 0) <= 0) &
+             (set_piece_events["location"].apply(lambda x: float(x[1]) if isinstance(x, list) and len(x) >= 2 else 0) == 80)) |
+            # Esquina inferior izquierda
+            ((set_piece_events["location"].apply(lambda x: float(x[0]) if isinstance(x, list) and len(x) >= 2 else 0) <= 0) &
+             (set_piece_events["location"].apply(lambda x: float(x[1]) if isinstance(x, list) and len(x) >= 2 else 0) == 0))
+        )
+    ].copy()
+
+    # Separar córners completados e incompletos
+    completed_corners = corners[corners.get("pass_outcome", "") == "Success"]
+    incomplete_corners = corners[corners.get("pass_outcome", "") != "Success"]
     
     set_piece_metrics = {
-        "total_corners": len(set_piece_events[set_piece_events["type"] == "Corner"]),
-        "successful_corners": len(set_piece_events[(set_piece_events["type"] == "Corner") & 
-            (set_piece_events.get("pass_outcome", "") == "Success")]),
-        "total_free_kicks": len(set_piece_events[set_piece_events["type"] == "Free Kick"]),
-        "successful_free_kicks": len(set_piece_events[(set_piece_events["type"] == "Free Kick") & 
-            (set_piece_events.get("pass_outcome", "") == "Success")]),
-        "total_throw_ins": len(set_piece_events[set_piece_events["type"] == "Throw In"]),
-        "successful_throw_ins": len(set_piece_events[(set_piece_events["type"] == "Throw In") & 
-            (set_piece_events.get("pass_outcome", "") == "Success")]),
+        "total_corners": len(corners),
+        "completed_corners": len(completed_corners),
+        "incomplete_corners": len(incomplete_corners),
+        "corner_completion_rate": len(completed_corners) / len(corners) if len(corners) > 0 else 0,
+        "total_free_kicks": len(set_piece_events[set_piece_events.get("pass_outcome", "") == "Foul Won"]),
+        "total_throw_ins": len(set_piece_events[set_piece_events.get("pass_outcome", "") == "Throw In"]),
+        "successful_throw_ins": len(set_piece_events[set_piece_events.get("pass_outcome", "") == "Success"]),
         "set_piece_shots": len(set_piece_events[set_piece_events.get("pass_shot_assist", "") == True]) if "pass_shot_assist" in set_piece_events.columns else 0,
         "set_piece_goals": len(set_piece_events[set_piece_events.get("pass_goal_assist", "") == True]) if "pass_goal_assist" in set_piece_events.columns else 0,
     }
@@ -481,17 +502,67 @@ def generar_analisis_general(local_events, visitante_events, local_name, visitan
     }
 
     # 3. ANÁLISIS GENERAL DE PELOTA PARADA
-    local_set_pieces = local_events[local_events["type"].isin(["Free Kick", "Corner", "Throw In"])]
-    visitante_set_pieces = visitante_events[visitante_events["type"].isin(["Free Kick", "Corner", "Throw In"])]
+    local_set_pieces = local_events[
+        (local_events["type"] == "Foul Won") | 
+        (local_events["type"] == "Pass") |
+        (local_events["type"] == "Throw In")
+    ]
+    visitante_set_pieces = visitante_events[
+        (visitante_events["type"] == "Foul Won") | 
+        (visitante_events["type"] == "Pass") |
+        (visitante_events["type"] == "Throw In")
+    ]
+    
+    # Identificar córners para ambos equipos
+    local_corners = local_set_pieces[
+        (local_set_pieces["type"] == "Pass") &
+        (
+            ((local_set_pieces["location"].apply(lambda x: float(x[0]) if isinstance(x, list) and len(x) >= 2 else 0) >= 120) &
+             (local_set_pieces["location"].apply(lambda x: float(x[1]) if isinstance(x, list) and len(x) >= 2 else 0) == 80)) |
+            ((local_set_pieces["location"].apply(lambda x: float(x[0]) if isinstance(x, list) and len(x) >= 2 else 0) >= 120) &
+             (local_set_pieces["location"].apply(lambda x: float(x[1]) if isinstance(x, list) and len(x) >= 2 else 0) == 0)) |
+            ((local_set_pieces["location"].apply(lambda x: float(x[0]) if isinstance(x, list) and len(x) >= 2 else 0) <= 0) &
+             (local_set_pieces["location"].apply(lambda x: float(x[1]) if isinstance(x, list) and len(x) >= 2 else 0) == 80)) |
+            ((local_set_pieces["location"].apply(lambda x: float(x[0]) if isinstance(x, list) and len(x) >= 2 else 0) <= 0) &
+             (local_set_pieces["location"].apply(lambda x: float(x[1]) if isinstance(x, list) and len(x) >= 2 else 0) == 0))
+        )
+    ]
+    
+    visitante_corners = visitante_set_pieces[
+        (visitante_set_pieces["type"] == "Pass") &
+        (
+            ((visitante_set_pieces["location"].apply(lambda x: float(x[0]) if isinstance(x, list) and len(x) >= 2 else 0) >= 120) &
+             (visitante_set_pieces["location"].apply(lambda x: float(x[1]) if isinstance(x, list) and len(x) >= 2 else 0) == 80)) |
+            ((visitante_set_pieces["location"].apply(lambda x: float(x[0]) if isinstance(x, list) and len(x) >= 2 else 0) >= 120) &
+             (visitante_set_pieces["location"].apply(lambda x: float(x[1]) if isinstance(x, list) and len(x) >= 2 else 0) == 0)) |
+            ((visitante_set_pieces["location"].apply(lambda x: float(x[0]) if isinstance(x, list) and len(x) >= 2 else 0) <= 0) &
+             (visitante_set_pieces["location"].apply(lambda x: float(x[1]) if isinstance(x, list) and len(x) >= 2 else 0) == 80)) |
+            ((visitante_set_pieces["location"].apply(lambda x: float(x[0]) if isinstance(x, list) and len(x) >= 2 else 0) <= 0) &
+             (visitante_set_pieces["location"].apply(lambda x: float(x[1]) if isinstance(x, list) and len(x) >= 2 else 0) == 0))
+        )
+    ]
+
+    # Separar córners completados e incompletos para cada equipo
+    local_completed_corners = local_corners[local_corners.get("pass_outcome", "") == "Success"]
+    local_incomplete_corners = local_corners[local_corners.get("pass_outcome", "") != "Success"]
+    visitante_completed_corners = visitante_corners[visitante_corners.get("pass_outcome", "") == "Success"]
+    visitante_incomplete_corners = visitante_corners[visitante_corners.get("pass_outcome", "") != "Success"]
     
     set_piece_metrics = {
-        f"{local_name}_corners": len(local_set_pieces[local_set_pieces["type"] == "Corner"]),
-        f"{visitante_name}_corners": len(visitante_set_pieces[visitante_set_pieces["type"] == "Corner"]),
-        f"{local_name}_free_kicks": len(local_set_pieces[local_set_pieces["type"] == "Free Kick"]),
-        f"{visitante_name}_free_kicks": len(visitante_set_pieces[visitante_set_pieces["type"] == "Free Kick"]),
-        
+        f"{local_name}_total_corners": len(local_corners),
+        f"{local_name}_completed_corners": len(local_completed_corners),
+        f"{local_name}_incomplete_corners": len(local_incomplete_corners),
+        f"{local_name}_corner_completion_rate": len(local_completed_corners) / len(local_corners) if len(local_corners) > 0 else 0,
+        f"{visitante_name}_total_corners": len(visitante_corners),
+        f"{visitante_name}_completed_corners": len(visitante_completed_corners),
+        f"{visitante_name}_incomplete_corners": len(visitante_incomplete_corners),
+        f"{visitante_name}_corner_completion_rate": len(visitante_completed_corners) / len(visitante_corners) if len(visitante_corners) > 0 else 0,
+        f"{local_name}_free_kicks": len(local_set_pieces[local_set_pieces.get("pass_outcome", "") == "Foul Won"]),
+        f"{visitante_name}_free_kicks": len(visitante_set_pieces[visitante_set_pieces.get("pass_outcome", "") == "Foul Won"]),
+        f"{local_name}_throw_ins": len(local_set_pieces[local_set_pieces.get("pass_outcome", "") == "Throw In"]),
+        f"{visitante_name}_throw_ins": len(visitante_set_pieces[visitante_set_pieces.get("pass_outcome", "") == "Throw In"]),
         "total_set_pieces": len(local_set_pieces) + len(visitante_set_pieces),
-        "corner_battle": len(local_set_pieces[local_set_pieces["type"] == "Corner"]) - len(visitante_set_pieces[visitante_set_pieces["type"] == "Corner"])
+        "corner_battle": len(local_corners) - len(visitante_corners)
     }
 
     # 4. ANÁLISIS GENERAL DE TRANSICIONES
