@@ -1,11 +1,9 @@
 import streamlit as st
 import pandas as pd
 from openai import OpenAI
-from dotenv import load_dotenv
 import os
 
 # Configura tu token de API de ChatGPT
-load_dotenv()
 
 client = OpenAI(api_key=os.getenv("OPENAI_API_KEY"))
 

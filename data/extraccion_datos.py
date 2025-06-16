@@ -11,11 +11,9 @@ warnings.filterwarnings("ignore", category=FutureWarning)
 from dotenv import load_dotenv
 import os
 
-load_dotenv()
 # --------------------------
 # Funciones de extracción
 # --------------------------
-load_dotenv() 
 def get_credentials():
     SB_USERNAME = os.getenv("STATSBOMB_USERNAME")
     SB_PASSWORD = os.getenv("STATSBOMB_PASSWORD")
