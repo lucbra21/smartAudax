@@ -8,176 +8,166 @@ import os
 client = OpenAI(api_key=os.getenv("OPENAI_API_KEY"))
 
 def chatgpt_api(prompt, data, max_rows=100):
-    """
-    Envía a la API de ChatGPT un prompt junto con un resumen de los datos.
+   """
+   Envía a la API de ChatGPT un prompt junto con un resumen de los datos.
+   
+   Parámetros:
+      - prompt (str): el mensaje inicial que contextualiza la tarea.
+      - data (dict/DataFrame): datos del partido y métricas calculadas.
+      - max_rows (int): límite de filas a incluir en el resumen.
+   """
+   # Preparar el resumen de los datos
+   data_summary = ""
     
-    Parámetros:
-        - prompt (str): el mensaje inicial que contextualiza la tarea.
-        - data (dict/DataFrame): datos del partido y métricas calculadas.
-        - max_rows (int): límite de filas a incluir en el resumen.
-    """
-    # Preparar el resumen de los datos
-    data_summary = ""
-    
-    # Si data es un diccionario con eventos, team_stats y metrics
-    if isinstance(data, dict):
-      if "events" in data and not data["events"].empty:
-         events_summary = data["events"].head(max_rows).to_csv(index=False)
-         data_summary += f"Eventos relevantes:\n{events_summary}\n\n"
-      
-      if "team_stats" in data and not data["team_stats"].empty:
-         team_stats_summary = data["team_stats"].to_csv(index=False)
-         data_summary += f"Estadísticas de equipo:\n{team_stats_summary}\n\n"
+   # Si data es un diccionario con eventos, team_stats y metrics
+   if isinstance(data, dict) and data != {}:
+      data_summary = data
          
-      if "metrics" in data:
-         metrics_summary = "\nMétricas calculadas:\n"
-         for key, value in data["metrics"].items():
-               metrics_summary += f"{key}: {value}\n"
-         data_summary += metrics_summary
-         
-      if "previous_avg" in data and data["previous_avg"] is not None:
-         prev_summary = "\nPromedios últimos 5 partidos:\n"
-         for key, value in data["previous_avg"].items():
-               prev_summary += f"{key}: {value:.2f}\n"
-         data_summary += prev_summary
     
-    # Si data es un DataFrame
-    elif isinstance(data, pd.DataFrame) and not data.empty:
+   # Si data es un DataFrame
+   elif isinstance(data, pd.DataFrame) and not data.empty:
       data_summary = data.head(max_rows).to_csv(index=False)
-    else:
+   else:
       data_summary = "No hay datos disponibles para el análisis."
 
     # Construcción del mensaje a enviar
-    message = f"{prompt}\n\nResumen de datos:\n{data_summary}"
 
-    # Llamada a la API de OpenAI
-    response = client.chat.completions.create(
-        model="gpt-4o-mini",
+
+   message = f"{prompt}\n\nResumen de datos:\n{data_summary}"
+
+   # Llamada a la API de OpenAI
+   response = client.chat.completions.create(
+        model="gpt-4.1",
         messages=[
-            {"role": "system", "content": """Eres un Director Técnico experto en fútbol, con amplia experiencia en análisis 
-            táctico y datos. Tu objetivo es proporcionar análisis técnicos detallados y recomendaciones específicas basadas 
-            en datos estadísticos y observaciones del juego. Debes mantener un enfoque técnico y profesional, utilizando 
-            terminología específica del fútbol y respaldando tus conclusiones con datos concretos. 
-            Debes siempre utilizar los datos como evidencia de factos, siempre expone los datos concretos que usas en cada analisis"""},
+            {"role": "system", "content": """Eres un Director Técnico experto en fútbol. Tu objetivo es proporcionar análisis técnicos basados ÚNICAMENTE en los datos proporcionados.
+
+REGLAS CRÍTICAS:
+1. Usa SOLO los datos que se te proporcionan
+2. NO inventes información ni hagas suposiciones
+3. Si no hay datos suficientes para un aspecto, indícalo claramente
+4. Mantén los análisis concisos y directos
+5. Prioriza los datos de "enhanced_analysis" sobre otros datos
+6. Escribe en lenguaje claro y accesible para un presidente de club
+
+IMPORTANTE: Si no tienes datos para respaldar una afirmación, NO la hagas."""},
             {"role": "user", "content": message}
         ],
-        temperature=0.2,
+        temperature=0.1,
         max_tokens=800
     )
 
-    return response.choices[0].message.content
+   return response.choices[0].message.content
 
 def generate_prompt_matches():
     return """
-    Como Director Técnico, proporciona un análisis técnico conciso del partido. 
+    Como Director Técnico, proporciona una sinopsis narrativa del partido, basándote ÚNICAMENTE en los datos proporcionados.
     
-    IMPORTANTE: Adapta tu análisis según el tipo de partido:
-    - Si AUDAX ITALIANO participa: Enfócate en el rendimiento de Audax
-    - Si Audax NO participa: Análisis general del partido
+    IMPORTANTE: 
+    - Usa SOLO los datos que se te proporcionan, no inventes información
+    - Si no hay datos suficientes para un aspecto, indícalo claramente
+    - Mantén el análisis conciso (máximo 200 palabras)
+    - Prioriza los datos de match_info y match_events si están disponibles
+    - Enfócate en la narrativa del partido, no en estadísticas técnicas
     
-    Estructura tu análisis en:
+    Escribe un análisis fluido que incluya:
 
-    1. Contexto Táctico (máximo 2 líneas)
-       - Estructura inicial y adaptaciones clave
+    - Equipos participantes, resultado final y fecha del partido
+    - Formaciones utilizadas por cada equipo (si están en match_events.formations)
+    - Cómo se desarrolló el partido cronológicamente
+    - Momentos clave basados en el timing de los goles y qué jugadores marcaron
+    - El ritmo y la intensidad del partido
+    - Cómo se vio el equipo en el campo
+    - Aspectos positivos y áreas de mejora
+    - Un resumen ejecutivo del partido y sus implicaciones para el club
 
-    2. Desarrollo del Partido (máximo 2 líneas)
-       - Momentos clave con datos específicos
-
-    3. Evaluación del Rendimiento (máximo 2 líneas)
-       - Métricas clave que respaldan el análisis
-
-    Utiliza datos específicos del partido para respaldar cada punto. 
-    Limita cada sección a 2 líneas y enfócate en métricas concretas.
+    Si no hay datos suficientes para algún aspecto, omítelo en lugar de inventar información.
+    Escribe en lenguaje claro y accesible para un presidente de club, evitando jerga técnica excesiva.
     """
 
 def generate_prompt_ataque():
     return """
-    Como Director Técnico, analiza el rendimiento ofensivo. 
+    Como Director Técnico, analiza el rendimiento ofensivo del equipo, basándote ÚNICAMENTE en los datos proporcionados.
     
-    IMPORTANTE: Adapta tu análisis según el contexto:
-    - Si AUDAX ITALIANO participa: Análisis del ataque de Audax vs. promedio histórico
-    - Si Audax NO participa: Análisis ofensivo del partido
+    IMPORTANTE: 
+    - Usa SOLO los datos de enhanced_analysis si están disponibles
+    - Si no hay datos suficientes, indícalo claramente
+    - Mantén el análisis conciso
+    - Enfócate en la narrativa ofensiva, no en estadísticas técnicas
+    - Describe cómo se vio el ataque del equipo
+    
+    Escribe un análisis que incluya:
 
-    Estructura tu análisis en:
+    - Cómo se comportó el equipo en ataque
+    - Jugadores que destacaron ofensivamente (solo si hay datos específicos)
+    - La efectividad general del juego ofensivo
+    - Momentos o situaciones ofensivas importantes
 
-    1. Estructura Ofensiva (máximo 2 líneas)
-       - Organización posicional y espacios generados
-
-    2. Progresión Ofensiva (máximo 2 líneas)
-       - Calidad de transiciones hacia el ataque
-
-    3. Finalización (máximo 2 líneas)
-       - Estadísticas de oportunidades creadas y convertidas
-
-    Utiliza datos específicos para cada punto. Limita cada sección a 2 líneas.
-    Si hay datos históricos disponibles y es un partido de Audax, compara con el promedio de los últimos 5 partidos.
+    Si no hay datos para algún aspecto, omítelo. No inventes información.
+    Escribe en lenguaje claro y accesible para un presidente de club, evitando jerga técnica excesiva.
     """
 
 def generate_prompt_defensa():
     return """
-    Como Director Técnico, analiza el rendimiento defensivo.
+    Como Director Técnico, analiza el rendimiento defensivo del equipo, basándote ÚNICAMENTE en los datos proporcionados.
     
-    IMPORTANTE: Adapta tu análisis según el contexto:
-    - Si AUDAX ITALIANO participa: Análisis de la defensa de Audax vs. promedio histórico
-    - Si Audax NO participa: Análisis defensivo del partido
+    IMPORTANTE: 
+    - Usa SOLO los datos de enhanced_analysis si están disponibles
+    - Si no hay datos suficientes, indícalo claramente
+    - Mantén el análisis conciso 
+    - Enfócate en la narrativa defensiva, no en estadísticas técnicas
+    - Describe cómo se vio la defensa del equipo
+    
+    Escribe un análisis que incluya:
 
-    Estructura tu análisis en:
+    - Cómo se comportó el equipo en defensa
+    - Jugadores que destacaron defensivamente (solo si hay datos específicos)
+    - La solidez general del juego defensivo
+    - Momentos o situaciones defensivas importantes
 
-    1. Organización Defensiva (máximo 2 líneas)
-       - Estructura y compactidad del bloque defensivo
-
-    2. Duelos Defensivos (máximo 2 líneas)
-       - Rendimiento en tackles e intercepciones
-
-    3. Transición Defensiva (máximo 2 líneas)
-       - Velocidad y organización tras pérdida
-
-    Utiliza datos específicos para cada punto. Limita cada sección a 2 líneas.
-    Si hay datos históricos disponibles y es un partido de Audax, compara con el promedio de los últimos 5 partidos.
+    Si no hay datos para algún aspecto, omítelo. No inventes información.
+    Escribe en lenguaje claro y accesible para un presidente de club, evitando jerga técnica excesiva.
     """
 
 def generate_prompt_pelota_parada():
     return """
-    Como Director Técnico, analiza el rendimiento en situaciones de pelota parada.
+    Como Director Técnico, analiza el rendimiento en pelota parada del equipo, basándote ÚNICAMENTE en los datos proporcionados.
     
-    IMPORTANTE: Adapta tu análisis según el contexto:
-    - Si AUDAX ITALIANO participa: Análisis de pelota parada de Audax vs. promedio histórico
-    - Si Audax NO participa: Análisis de pelota parada del partido
+    IMPORTANTE: 
+    - Usa SOLO los datos de enhanced_analysis si están disponibles
+    - Si no hay datos suficientes, indícalo claramente
+    - Mantén el análisis conciso 
+    - Enfócate en la narrativa de pelota parada, no en estadísticas técnicas
+    - Describe cómo se vio el equipo en estas situaciones
+    
+    Escribe un análisis que incluya:
 
-    Estructura tu análisis en:
+    - Cómo se comportó el equipo en pelota parada
+    - La efectividad en situaciones específicas (solo si hay datos)
+    - Momentos importantes de pelota parada
+    - La impresión general del rendimiento en estas situaciones
 
-    1. Efectividad Ofensiva (máximo 2 líneas)
-       - Rendimiento en córners y tiros libres
-
-    2. Solidez Defensiva (máximo 2 líneas)
-       - Organización en la defensa de pelotas paradas
-
-    3. Variaciones Tácticas (máximo 2 líneas)
-       - Diferentes esquemas utilizados
-
-    Utiliza datos específicos para cada punto. Limita cada sección a 2 líneas.
-    Si hay datos históricos disponibles y es un partido de Audax, compara con el promedio de los últimos 5 partidos.
+    Si no hay datos para algún aspecto, omítelo. No inventes información.
+    Escribe en lenguaje claro y accesible para un presidente de club, evitando jerga técnica excesiva.
     """
 
 def generate_prompt_transiciones():
     return """
-    Como Director Técnico, analiza el rendimiento en las transiciones del juego.
+    Como Director Técnico, analiza el rendimiento en transiciones del equipo, basándote ÚNICAMENTE en los datos proporcionados.
     
-    IMPORTANTE: Adapta tu análisis según el contexto:
-    - Si AUDAX ITALIANO participa: Análisis de transiciones de Audax vs. promedio histórico
-    - Si Audax NO participa: Análisis de transiciones del partido
+    IMPORTANTE: 
+    - Usa SOLO los datos de enhanced_analysis si están disponibles
+    - Si no hay datos suficientes, indícalo claramente
+    - Mantén el análisis conciso 
+    - Enfócate en la narrativa de transiciones, no en estadísticas técnicas
+    - Describe cómo se vio el equipo en estas situaciones
+    
+    Escribe un análisis que incluya:
 
-    Estructura tu análisis en:
+    - Cómo se comportó el equipo en las transiciones
+    - La efectividad en contragolpes (solo si hay datos)
+    - Momentos importantes de transición
+    - La impresión general del rendimiento en estas situaciones
 
-    1. Transiciones Ofensivas (máximo 2 líneas)
-       - Velocidad y efectividad en contragolpes
-
-    2. Transiciones Defensivas (máximo 2 líneas)
-       - Organización tras pérdida del balón
-
-    3. Gestión de Espacios (máximo 2 líneas)
-       - Aprovechamiento de espacios en transición
-
-    Utiliza datos específicos para cada punto. Limita cada sección a 2 líneas.
-    Si hay datos históricos disponibles y es un partido de Audax, compara con el promedio de los últimos 5 partidos.
+    Si no hay datos para algún aspecto, omítelo. No inventes información.
+    Escribe en lenguaje claro y accesible para un presidente de club, evitando jerga técnica excesiva.
     """

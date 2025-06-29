@@ -17,7 +17,7 @@ from common.generador import (
     generate_prompt_ataque,
     generate_prompt_defensa,
     generate_prompt_pelota_parada,
-    generate_prompt_transiciones
+    generate_prompt_transiciones,
 )
 
 from common.match_data import generar_datos
@@ -27,24 +27,19 @@ def limpiar_texto_pdf(texto, max_palabra=50):
     """
     Limpia el texto para evitar errores con FPDF, pero sin cortar en líneas.
     """
-    # Convertir marcadores de markdown a texto plano
-    texto = texto.replace('**', '')  # Negrita
-    texto = texto.replace('*', '')   # Cursiva
-    texto = texto.replace('`', '')   # Código
-    texto = texto.replace('#', '')   # Encabezados
-    texto = texto.replace('>', '')   # Citas
-    texto = texto.replace('-', '')   # Listas
-    texto = texto.replace('+', '')   # Listas
-    texto = texto.replace('1.', '')  # Listas numeradas
-    texto = texto.replace('2.', '')
-    texto = texto.replace('3.', '')
-    texto = texto.replace('4.', '')
-    texto = texto.replace('5.', '')
-    texto = texto.replace('6.', '')
-    texto = texto.replace('7.', '')
-    texto = texto.replace('8.', '')
-    texto = texto.replace('9.', '')
-    texto = texto.replace('0.', '')
+    
+    # Reemplazar caracteres Unicode problemáticos
+    texto = texto.replace('–', '-')  # En dash por guión normal
+    texto = texto.replace('—', '-')  # Em dash por guión normal
+    texto = texto.replace('…', '...')  # Ellipsis por puntos
+    texto = texto.replace('"', '"')  # Smart quotes por comillas normales
+    texto = texto.replace('"', '"')
+    texto = texto.replace(''', "'")  # Smart apostrophe por apóstrofe normal
+    texto = texto.replace(''', "'")
+    texto = texto.replace('°', ' grados')  # Degree symbol
+    texto = texto.replace('×', 'x')  # Multiplication sign
+    texto = texto.replace('÷', '/')  # Division sign
+    texto = texto.replace('±', '+/-')  # Plus-minus sign
     
     # Reemplazar saltos de línea múltiples por uno solo
     texto = re.sub(r'\n\s*\n', '\n\n', texto)
@@ -99,12 +94,12 @@ def generar_visualizaciones_ataque(attack_data, pdf):
     # Crear figura con dos subplots
     fig, (ax1, ax2) = plt.subplots(1, 2, figsize=(20, 10))
     
-    # 1. Mapa de tiros
+    # 1. Mapa de tiros (mitad del campo para mejor visibilidad)
     pitch = Pitch(pitch_type='statsbomb', line_zorder=2, pitch_color='#22312b', line_color='#c7d5cc')
     pitch.draw(ax=ax1)
     
     # Filtrar eventos de tiro
-    shots = attack_data["events"][attack_data["events"]["type"] == "Shot"].copy()
+    shots = attack_data[attack_data["type"] == "Shot"].copy()
     
     # Extraer coordenadas de inicio y fin
     shots['start_x'] = shots['location'].apply(lambda x: float(x[0]) if isinstance(x, list) and len(x) >= 2 else None)
@@ -145,7 +140,9 @@ def generar_visualizaciones_ataque(attack_data, pdf):
             ax=ax1, color='red', width=2, headwidth=5, headlength=5, alpha=0.6
         )
     
-    ax1.set_title('Mapa de Tiros', fontsize=15)
+    # Configurar vista de mitad del campo (solo zona ofensiva)
+    ax1.set_xlim(60, 120)  # Solo mostrar desde la línea media hacia adelante
+    ax1.set_title('Mapa de Tiros (Zona Ofensiva)', fontsize=15)
     ax1.legend()
     
     # 2. Mapa de pases progresivos
@@ -153,7 +150,7 @@ def generar_visualizaciones_ataque(attack_data, pdf):
     pitch2.draw(ax=ax2)
     
     # Filtrar pases
-    passes = attack_data["events"][attack_data["events"]["type"] == "Pass"].copy()
+    passes = attack_data[attack_data["type"] == "Pass"].copy()
     
     # Extraer coordenadas de inicio y fin
     passes['start_x'] = passes['location'].apply(lambda x: float(x[0]) if isinstance(x, list) and len(x) >= 2 else None)
@@ -227,24 +224,80 @@ def generar_visualizaciones_defensa(defense_data, pdf):
     """Genera visualizaciones para la sección de defensa."""
     fig, (ax1, ax2) = plt.subplots(1, 2, figsize=(20, 10))
     
-    # 1. Mapa de presiones
+    # 1. Línea media de recuperaciones y pérdidas
     pitch = Pitch(pitch_type='statsbomb', line_zorder=2, pitch_color='#22312b', line_color='#c7d5cc')
     pitch.draw(ax=ax1)
     
-    # Filtrar presiones
-    pressures = defense_data["events"][defense_data["events"]["type"] == "Pressure"].copy()
+    # Filtrar recuperaciones y pérdidas
+    recoveries = defense_data[defense_data["type"] == "Ball Recovery"].copy()
+    dispossessions = defense_data[defense_data["type"] == "Dispossessed"].copy()
+    
+    # Extraer coordenadas
+    recoveries['x'] = recoveries['location'].apply(lambda x: float(x[0]) if isinstance(x, list) and len(x) >= 2 else None)
+    recoveries['y'] = recoveries['location'].apply(lambda x: float(x[1]) if isinstance(x, list) and len(x) >= 2 else None)
+    dispossessions['x'] = dispossessions['location'].apply(lambda x: float(x[0]) if isinstance(x, list) and len(x) >= 2 else None)
+    dispossessions['y'] = dispossessions['location'].apply(lambda x: float(x[1]) if isinstance(x, list) and len(x) >= 2 else None)
+    
+    # Eliminar filas con coordenadas inválidas
+    recoveries = recoveries.dropna(subset=['x', 'y'])
+    dispossessions = dispossessions.dropna(subset=['x', 'y'])
+    
+    # Plotear recuperaciones y pérdidas
+    if not recoveries.empty:
+        pitch.scatter(recoveries['x'], recoveries['y'], ax=ax1, color='green', marker='o', s=100, label='Recuperaciones')
+        
+        # Calcular y mostrar línea promedio de recuperaciones en X (profundidad)
+        avg_recovery_x = recoveries['x'].mean()
+        
+        # Dibujar línea vertical en la posición promedio de recuperaciones
+        ax1.axvline(x=avg_recovery_x, color='green', linestyle='-', alpha=0.8, linewidth=5, label=f'Línea Promedio Recuperaciones (X={avg_recovery_x:.1f})')
+        
+        # Calcular porcentaje de recuperaciones por tercio
+        # Tercio defensivo: 0-40, Tercio medio: 40-80, Tercio ofensivo: 80-120
+        defensive_third = len(recoveries[recoveries['x'] <= 40])
+        middle_third = len(recoveries[(recoveries['x'] > 40) & (recoveries['x'] <= 80)])
+        offensive_third = len(recoveries[recoveries['x'] > 80])
+        total_recoveries = len(recoveries)
+        
+        defensive_pct = (defensive_third / total_recoveries) * 100
+        middle_pct = (middle_third / total_recoveries) * 100
+        offensive_pct = (offensive_third / total_recoveries) * 100
+        
+        # Mostrar estadísticas de recuperaciones por tercio
+        ax1.text(10, 85, f'Recuperaciones por Tercio:\nDefensivo: {defensive_pct:.1f}%\nMedio: {middle_pct:.1f}%\nOfensivo: {offensive_pct:.1f}%', 
+                fontsize=10, color='white', bbox=dict(boxstyle="round,pad=0.3", facecolor='green', alpha=0.7))
+        
+    
+    
+    ax1.set_title('Recuperaciones', fontsize=15)
+    ax1.legend()
+    
+    # 2. Mapa de presión y forma defensiva
+    pitch2 = Pitch(pitch_type='statsbomb', line_zorder=2, pitch_color='#22312b', line_color='#c7d5cc')
+    pitch2.draw(ax=ax2)
+    
+    # Filtrar presiones y tackles
+    pressures = defense_data[defense_data["type"] == "Pressure"].copy()
+    tackles = defense_data[defense_data["type"] == "Tackle"].copy()
+    interceptions = defense_data[defense_data["type"] == "Interception"].copy()
     
     # Extraer coordenadas
     pressures['x'] = pressures['location'].apply(lambda x: float(x[0]) if isinstance(x, list) and len(x) >= 2 else None)
     pressures['y'] = pressures['location'].apply(lambda x: float(x[1]) if isinstance(x, list) and len(x) >= 2 else None)
-    
+    tackles['x'] = tackles['location'].apply(lambda x: float(x[0]) if isinstance(x, list) and len(x) >= 2 else None)
+    tackles['y'] = tackles['location'].apply(lambda x: float(x[1]) if isinstance(x, list) and len(x) >= 2 else None)
+    interceptions['x'] = interceptions['location'].apply(lambda x: float(x[0]) if isinstance(x, list) and len(x) >= 2 else None)
+    interceptions['y'] = interceptions['location'].apply(lambda x: float(x[1]) if isinstance(x, list) and len(x) >= 2 else None)
     
     # Eliminar filas con coordenadas inválidas
     pressures = pressures.dropna(subset=['x', 'y'])
+    tackles = tackles.dropna(subset=['x', 'y'])
+    interceptions = interceptions.dropna(subset=['x', 'y'])
     
+    # Crear mapa de calor de presiones
     if not pressures.empty:
         # Crear bins para el mapa de calor
-        bin_statistic = pitch.bin_statistic(
+        bin_statistic = pitch2.bin_statistic(
             pressures['x'],
             pressures['y'],
             statistic='count',
@@ -253,40 +306,26 @@ def generar_visualizaciones_defensa(defense_data, pdf):
         
         # Calcular porcentajes para cada zona
         total_pressures = bin_statistic['statistic'].sum()
-        bin_statistic['statistic'] = (bin_statistic['statistic'] / total_pressures) * 100
-        
-        # Plotear mapa de calor
-        pitch.heatmap(bin_statistic, ax=ax1, cmap='Reds', edgecolors='#22312b')
-        
+        if total_pressures > 0:
+            bin_statistic['statistic'] = (bin_statistic['statistic'] / total_pressures) * 100
+            
+            # Plotear mapa de calor
+            pitch2.heatmap(bin_statistic, ax=ax2, cmap='Reds', edgecolors='#22312b', alpha=0.6)
     
-    ax1.set_title('Mapa de Presiones', fontsize=15)
+    # Plotear tackles e intercepciones
+    if not tackles.empty:
+        pitch2.scatter(tackles['x'], tackles['y'], ax=ax2, color='orange', marker='s', s=80, label='Tackles', zorder=3)
+    if not interceptions.empty:
+        pitch2.scatter(interceptions['x'], interceptions['y'], ax=ax2, color='yellow', marker='^', s=80, label='Intercepciones', zorder=3)
     
-    # 2. Mapa de recuperaciones y tackles
-    pitch2 = Pitch(pitch_type='statsbomb', line_zorder=2, pitch_color='#22312b', line_color='#c7d5cc')
-    pitch2.draw(ax=ax2)
-    
-    # Filtrar recuperaciones y tackles
-    recoveries = defense_data["events"][defense_data["events"]["type"] == "Ball Recovery"].copy()
-    tackles = defense_data["events"][defense_data["events"]["type"] == "Tackle"].copy()
-    
-    # Extraer coordenadas
-    recoveries['x'] = recoveries['location'].apply(lambda x: float(x[0]) if isinstance(x, list) and len(x) >= 2 else None)
-    recoveries['y'] = recoveries['location'].apply(lambda x: float(x[1]) if isinstance(x, list) and len(x) >= 2 else None)
-    tackles['x'] = tackles['location'].apply(lambda x: float(x[0]) if isinstance(x, list) and len(x) >= 2 else None)
-    tackles['y'] = tackles['location'].apply(lambda x: float(x[1]) if isinstance(x, list) and len(x) >= 2 else None)
-    
-    # Eliminar filas con coordenadas inválidas
-    recoveries = recoveries.dropna(subset=['x', 'y'])
-    tackles = tackles.dropna(subset=['x', 'y'])
+    # Añadir zonas defensivas
+    # Zona de presión alta (último tercio)
+    ax2.axvspan(80, 120, alpha=0.2, color='red', label='Zona de Presión Alta')
+    # Zona de presión media (tercio medio)
+    ax2.axvspan(40, 80, alpha=0.1, color='orange', label='Zona de Presión Media')
 
     
-    # Plotear recuperaciones y tackles
-    if not recoveries.empty:
-        pitch2.scatter(recoveries['x'], recoveries['y'], ax=ax2, color='green', marker='o', s=100, label='Recuperaciones')
-    if not tackles.empty:
-        pitch2.scatter(tackles['x'], tackles['y'], ax=ax2, color='red', marker='x', s=100, label='Tackles')
-    
-    ax2.set_title('Recuperaciones y Tackles', fontsize=15)
+    ax2.set_title('Mapa de Presión y Forma Defensiva', fontsize=15)
     ax2.legend()
     
     # Guardar figura
@@ -310,21 +349,21 @@ def generar_visualizaciones_pelota_parada(set_piece_data, pdf):
 
     
     # Filtrar córners (pases desde las esquinas)
-    corners = set_piece_data["events"][
-        (set_piece_data["events"]["type"] == "Pass") &
+    corners = set_piece_data[
+        (set_piece_data["type"] == "Pass") &
         (
             # Esquina superior derecha
-            ((set_piece_data["events"]["location"].apply(lambda x: float(x[0]) if isinstance(x, list) and len(x) >= 2 else 0) >= 120) &
-             (set_piece_data["events"]["location"].apply(lambda x: float(x[1]) if isinstance(x, list) and len(x) >= 2 else 0) == 80)) |
+            ((set_piece_data["location"].apply(lambda x: float(x[0]) if isinstance(x, list) and len(x) >= 2 else 0) >= 120) &
+             (set_piece_data["location"].apply(lambda x: float(x[1]) if isinstance(x, list) and len(x) >= 2 else 0) == 80)) |
             # Esquina superior izquierda
-            ((set_piece_data["events"]["location"].apply(lambda x: float(x[0]) if isinstance(x, list) and len(x) >= 2 else 0) >= 120) &
-             (set_piece_data["events"]["location"].apply(lambda x: float(x[1]) if isinstance(x, list) and len(x) >= 2 else 0) == 0)) |
+            ((set_piece_data["location"].apply(lambda x: float(x[0]) if isinstance(x, list) and len(x) >= 2 else 0) >= 120) &
+             (set_piece_data["location"].apply(lambda x: float(x[1]) if isinstance(x, list) and len(x) >= 2 else 0) == 0)) |
             # Esquina inferior derecha
-            ((set_piece_data["events"]["location"].apply(lambda x: float(x[0]) if isinstance(x, list) and len(x) >= 2 else 0) <= 0) &
-             (set_piece_data["events"]["location"].apply(lambda x: float(x[1]) if isinstance(x, list) and len(x) >= 2 else 0) == 80)) |
+            ((set_piece_data["location"].apply(lambda x: float(x[0]) if isinstance(x, list) and len(x) >= 2 else 0) <= 0) &
+             (set_piece_data["location"].apply(lambda x: float(x[1]) if isinstance(x, list) and len(x) >= 2 else 0) == 80)) |
             # Esquina inferior izquierda
-            ((set_piece_data["events"]["location"].apply(lambda x: float(x[0]) if isinstance(x, list) and len(x) >= 2 else 0) <= 0) &
-             (set_piece_data["events"]["location"].apply(lambda x: float(x[1]) if isinstance(x, list) and len(x) >= 2 else 0) == 0))
+            ((set_piece_data["location"].apply(lambda x: float(x[0]) if isinstance(x, list) and len(x) >= 2 else 0) <= 0) &
+             (set_piece_data["location"].apply(lambda x: float(x[1]) if isinstance(x, list) and len(x) >= 2 else 0) == 0))
         )
     ].copy()
     
@@ -369,9 +408,9 @@ def generar_visualizaciones_pelota_parada(set_piece_data, pdf):
     pitch2.draw(ax=ax2)
     
     # Filtrar tiros libres (faltas en el último tercio)
-    free_kicks = set_piece_data["events"][
-        (set_piece_data["events"]["type"] == "Foul Won") &
-        (set_piece_data["events"]["location"].apply(lambda x: float(x[0]) if isinstance(x, list) and len(x) >= 2 else 0) >= 80)
+    free_kicks = set_piece_data[
+        (set_piece_data["type"] == "Foul Won") &
+        (set_piece_data["location"].apply(lambda x: float(x[0]) if isinstance(x, list) and len(x) >= 2 else 0) >= 80)
     ].copy()
     # Extraer coordenadas
     free_kicks['x'] = free_kicks['location'].apply(lambda x: float(x[0]) if isinstance(x, list) and len(x) >= 2 else None)
@@ -410,9 +449,9 @@ def generar_visualizaciones_transiciones(transition_data, pdf):
     pitch.draw(ax=ax1)
     
     # Filtrar contragolpes (recuperaciones seguidas de pases o carreras)
-    counter_attacks = transition_data["events"][
-        (transition_data["events"]["type"].isin(["Ball Recovery", "Interception"])) |
-        (transition_data["events"]["type"].isin(["Pass", "Carry"]))
+    counter_attacks = transition_data[
+        (transition_data["type"].isin(["Ball Recovery", "Interception"])) |
+        (transition_data["type"].isin(["Pass", "Carry"]))
     ].copy()
     
     # Agrupar eventos por secuencia
@@ -443,8 +482,8 @@ def generar_visualizaciones_transiciones(transition_data, pdf):
         )
     
     # Filtrar carreras progresivas (avance significativo)
-    progressive_carries = transition_data["events"][
-        (transition_data["events"]["type"] == "Carry")
+    progressive_carries = transition_data[
+        (transition_data["type"] == "Carry")
     ].copy()
     
     # Extraer coordenadas
@@ -489,6 +528,8 @@ def generar_visualizaciones_transiciones(transition_data, pdf):
 def generar_reporte(id_partido, local, visitante):
     # Determine if this is an Audax match for proper labeling
     audax_participa = local == "Audax Italiano" or visitante == "Audax Italiano"
+
+    print(id_partido)
     
     if audax_participa:
         st.write(f"🔍 Generando análisis enfocado en Audax Italiano: {local} vs. {visitante}")
@@ -508,7 +549,7 @@ def generar_reporte(id_partido, local, visitante):
         progress_bar.progress(5)
         
         # Obtener todos los datos del partido desde match_data.py
-        match_data, attack_data, defense_data, set_piece_data, transition_data = generar_datos(id_partido, local, visitante)
+        match_data, attack_data, defense_data, set_piece_data, transition_data, events_audax = generar_datos(id_partido, local, visitante)
         progress_bar.progress(40)
         
         # Extraer información del partido desde match_data
@@ -543,10 +584,10 @@ def generar_reporte(id_partido, local, visitante):
             pdf.image("static/escudo_audax.png", x=10, y=10, w=30)
             
             # Añadir número de página en la esquina superior derecha
-            pdf.set_font("Helvetica", "I", 8)
+            pdf.set_font("Arial", "I", 8)
             pdf.set_text_color(*dark_gray)
             pdf.set_y(10)
-            pdf.cell(0, 10, f"Página {pdf.page_no()}", ln=False, align="R")
+            pdf.cell(0, 10, f"Pagina {pdf.page_no()}", ln=False, align="R")
             
             # Restaurar posición Y
             pdf.set_y(current_y)
@@ -556,10 +597,14 @@ def generar_reporte(id_partido, local, visitante):
             # Añadir espacio antes de la sección
             pdf.ln(10)
             
+            # Limpiar el título y contenido para evitar errores de Unicode
+            title_clean = limpiar_texto_pdf(title)
+            content_clean = limpiar_texto_pdf(content)
+            
             # Título de sección con estilo
-            pdf.set_font("Helvetica", "B", 16)
+            pdf.set_font("Arial", "B", 16)
             pdf.set_text_color(*audax_green)
-            pdf.cell(0, 10, title, ln=True, align="C")
+            pdf.cell(0, 10, title_clean, ln=True, align="C")
             
             # Línea decorativa
             pdf.set_draw_color(*audax_green)
@@ -567,34 +612,34 @@ def generar_reporte(id_partido, local, visitante):
             pdf.ln(5)
             
             # Contenido
-            pdf.set_font("Helvetica", "", 12)
+            pdf.set_font("Arial", "", 12)
             pdf.set_text_color(*dark_gray)
-            pdf.multi_cell(0, 8, formatear_texto_para_pdf(content))
+            pdf.multi_cell(0, 8, content_clean)
         
         # Añadir encabezado a la primera página
         add_header()
         
         # Título principal con estilo
-        pdf.set_font("Helvetica", "B", 24)
+        pdf.set_font("Arial", "B", 24)
         pdf.set_text_color(*audax_green)
         pdf.cell(0, 20, "REPORTE DE ANÁLISIS", ln=True, align="C")
         
         # Información del partido
-        pdf.set_font("Helvetica", "B", 18)
+        pdf.set_font("Arial", "B", 18)
         pdf.set_text_color(*dark_gray)
         if audax_participa_confirmed:
             es_audax_local = match_info["es_audax_local"]
             equipo_rival = match_info["equipo_rival"]
             pdf.cell(0, 15, f"AUDAX ITALIANO {'(Local)' if es_audax_local else '(Visitante)'}", ln=True, align="C")
-            pdf.set_font("Helvetica", "B", 16)
+            pdf.set_font("Arial", "B", 16)
             pdf.cell(0, 12, f"vs. {equipo_rival}", ln=True, align="C")
         else:
             pdf.cell(0, 15, f"{local} vs. {visitante}", ln=True, align="C")
         
         # Resultado y fecha
-        pdf.set_font("Helvetica", "B", 16)
+        pdf.set_font("Arial", "B", 16)
         pdf.cell(0, 10, f"Resultado: {goles_local}-{goles_visitante}", ln=True, align="C")
-        pdf.set_font("Helvetica", "", 14)
+        pdf.set_font("Arial", "", 14)
         pdf.cell(0, 10, f"Fecha: {fecha_partido}", ln=True, align="C")
         
         # Obtener análisis
@@ -616,7 +661,8 @@ def generar_reporte(id_partido, local, visitante):
         progress_bar.progress(55)
         
         try:
-            res_match = chatgpt_api(prompt_match, match_data["raw_data"])
+            print(match_data)
+            res_match = chatgpt_api(prompt_match, match_data)
         except Exception as e:
             res_match = f"[ERROR al analizar match]: {str(e)}"
 
@@ -643,8 +689,8 @@ def generar_reporte(id_partido, local, visitante):
         if audax_participa_confirmed:
             status_text.text("Analizando pelota parada de Audax...")
         else:
-            status_text.text("Analizando situaciones de pelota parada...")
-        progress_bar.progress(85)
+            status_text.text("Analizando pelota parada del partido...")
+        progress_bar.progress(80)
         try:
             res_pelota_parada = chatgpt_api(prompt_pelota_parada, set_piece_data)
         except Exception as e:
@@ -654,10 +700,17 @@ def generar_reporte(id_partido, local, visitante):
             status_text.text("Analizando transiciones de Audax...")
         else:
             status_text.text("Analizando transiciones del partido...")
+        progress_bar.progress(85)
         try:
             res_transiciones = chatgpt_api(prompt_transiciones, transition_data)
         except Exception as e:
             res_transiciones = f"[ERROR al analizar transiciones]: {str(e)}"
+
+        if audax_participa_confirmed:
+            status_text.text("Generando conclusión del partido...")
+        else:
+            status_text.text("Generando conclusión general...")
+        progress_bar.progress(90)
 
         progress_bar.progress(95)
         # Paso 5: Generar PDF final
@@ -668,20 +721,20 @@ def generar_reporte(id_partido, local, visitante):
 
         # Añadir visualizaciones de ataque en la misma página
         add_section("Análisis Ofensivo", res_ataque)
-        generar_visualizaciones_ataque(attack_data, pdf)
+        generar_visualizaciones_ataque(events_audax, pdf)
         
         # Añadir sección de defensa
         add_section("Análisis Defensivo", res_defensa)
-        generar_visualizaciones_defensa(defense_data, pdf)
+        generar_visualizaciones_defensa(events_audax, pdf)
         
         # Añadir sección de pelota parada
         add_section("Análisis de Pelota Parada", res_pelota_parada)
-        generar_visualizaciones_pelota_parada(set_piece_data, pdf)
+        generar_visualizaciones_pelota_parada(events_audax, pdf)
         
         # Añadir sección de transiciones
         add_section("Análisis de Transiciones", res_transiciones)
-        generar_visualizaciones_transiciones(transition_data, pdf)
-        
+        generar_visualizaciones_transiciones(events_audax, pdf)
+                
         # Generar el nombre del archivo
         if audax_participa_confirmed:
             es_audax_local = match_info["es_audax_local"]

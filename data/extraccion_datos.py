@@ -326,5 +326,641 @@ def extract_historical_team_stats(creds, match_ids):
     
     return all_team_stats
 
-if __name__ == '__main__':
-    main()
+# --------------------------
+# Funciones de análisis mejorado
+# --------------------------
+def get_general_analysis(events):
+    """
+    Obtiene análisis general del partido incluyendo formaciones y goles.
+    
+    Args:
+        creds: Credenciales de la API
+        match_id: ID del partido
+        
+    Returns:
+        dict: Diccionario con formaciones y datos de goles
+    """
+
+    print(events.columns)
+    goals = events[(events['type'] == 'Shot') & (events['shot_outcome'] == 'Goal')]
+    starting_xi = events[events['type'] == 'Starting XI']
+    
+    print("--------------------------------")
+    print(starting_xi)
+    # Extract formations
+    formations = {}
+    for _, row in starting_xi.iterrows():
+        team = row['team']
+        tactics = row.get('tactics', {})
+        formation = tactics.get('formation')
+        formations[team] = formation
+    
+    # Extract goal data
+    goal_data = []
+    for _, goal in goals.iterrows():
+        goal_info = {
+            'minute': goal.get('minute', ''),
+            'second': goal.get('second', ''),
+            'team': goal.get('team', {}).get('name', '') if isinstance(goal.get('team'), dict) else goal.get('team', ''),
+            'player': goal.get('player', {}).get('name', '') if isinstance(goal.get('player'), dict) else goal.get('player', '')
+        }
+        goal_data.append(goal_info)
+
+    return {
+        'formations': formations, 
+        'goals': goal_data,
+        'total_goals': len(goal_data)
+    }
+
+def get_general_offensive_analysis(events):
+    """
+    Obtiene análisis ofensivo general del partido para ambos equipos.
+    
+    Args:
+        creds: Credenciales de la API
+        match_id: ID del partido
+        
+    Returns:
+        dict: Diccionario con estadísticas ofensivas generales
+    """
+    
+    # Get all shots and passes
+    shots = events[events['type'] == 'Shot']
+    passes = events[events['type'] == 'Pass']
+    
+    # Successful passes are those where pass_outcome is NaN
+    successful_passes = passes[passes['pass_outcome'].isna()]
+    
+    # Long passes are those with pass_length > 20
+    long_passes = passes[passes['pass_length'] > 20]
+    successful_long_passes = successful_passes[successful_passes['pass_length'] > 20]
+
+    key_stats = {
+        'total_shots': len(shots),
+        'total_passes': len(passes),
+        'successful_passes': len(successful_passes),
+        'pass_accuracy': len(successful_passes) / len(passes) if len(passes) > 0 else 0,
+        'long_passes': len(long_passes),
+        'successful_long_passes': len(successful_long_passes),
+        'long_pass_accuracy': len(successful_long_passes) / len(long_passes) if len(long_passes) > 0 else 0,
+        'xG_total': shots['shot_statsbomb_xg'].sum().round(2) if 'shot_statsbomb_xg' in shots.columns else 0
+    }
+
+    # Get top shooters
+    top_shooters = shots['player'].apply(lambda x: x.get('name') if isinstance(x, dict) else x).value_counts().head(3)
+    
+    # Get top passers
+    passes['player_name'] = passes['player'].apply(lambda x: x.get('name') if isinstance(x, dict) else x)
+    successful_passes['player_name'] = successful_passes['player'].apply(lambda x: x.get('name') if isinstance(x, dict) else x)
+    
+    total_passes_per_player = passes['player_name'].value_counts()
+    successful_passes_per_player = successful_passes['player_name'].value_counts()
+    
+    passing_stats = pd.DataFrame({
+        'total_passes': total_passes_per_player,
+        'successful_passes': successful_passes_per_player
+    }).fillna(0)
+    
+    passing_stats['pass_success_pct'] = (passing_stats['successful_passes'] / passing_stats['total_passes'] * 100).round(1)
+    top_passers = passing_stats.nlargest(3, 'total_passes')
+
+    return {
+        'key_stats': key_stats,
+        'top_shooters': top_shooters,
+        'top_passers': top_passers
+    }
+
+def get_general_defensive_analysis(events):
+    """
+    Obtiene análisis defensivo general del partido para ambos equipos.
+    
+    Args:
+        creds: Credenciales de la API
+        match_id: ID del partido
+        
+    Returns:
+        dict: Diccionario con estadísticas defensivas generales
+    """
+    
+    # Get different types of defensive events
+    pressures = events[events['type'] == 'Pressure']
+    duels = events[events['type'] == 'Duel']
+    blocks = events[events['type'] == 'Block']
+    interceptions = events[events['type'] == 'Interception']
+    ball_recoveries = events[events['type'] == 'Ball Recovery']
+    clearances = events[events['type'] == 'Clearance']
+    
+    successful_pressures = pressures[pressures['counterpress'] == True]
+    won_duels = duels[duels['duel_outcome'].apply(lambda x: x == 'Won' or x == "Success In Play")]
+
+    key_stats = {
+        'pressures': len(pressures),
+        'successful_pressures': len(successful_pressures),
+        'pressure_success_rate': len(successful_pressures) / len(pressures) if len(pressures) > 0 else 0,
+        'duels': len(duels),
+        'won_duels': len(won_duels),
+        'duel_success_rate': len(won_duels) / len(duels) if len(duels) > 0 else 0,
+        'blocks': len(blocks),
+        'interceptions': len(interceptions),
+        'ball_recoveries': len(ball_recoveries),
+        'clearances': len(clearances)
+    }
+
+    # Get top defenders
+    pressures_per_player = pressures['player'].value_counts()
+    duels_per_player = duels['player'].value_counts()
+    interceptions_per_player = interceptions['player'].value_counts()
+    
+    defensive_stats = pd.DataFrame({
+        'pressures': pressures_per_player,
+        'duels': duels_per_player,
+        'interceptions': interceptions_per_player
+    }).fillna(0)
+    
+    defensive_stats['total_defensive_actions'] = (defensive_stats['pressures'] + 
+                                                 defensive_stats['duels'] + 
+                                                 defensive_stats['interceptions'])
+    
+    top_defenders = defensive_stats.nlargest(3, 'total_defensive_actions')
+
+    return {
+        'key_stats': key_stats,
+        'top_defenders': top_defenders
+    }
+
+def get_general_transitions_analysis(events):
+    """
+    Obtiene análisis de transiciones general del partido para ambos equipos.
+    
+    Args:
+        creds: Credenciales de la API
+        match_id: ID del partido
+        
+    Returns:
+        dict: Diccionario con estadísticas de transiciones generales
+    """
+    
+    # Get transition-related events
+    ball_recoveries = events[events['type'] == 'Ball Recovery']
+    carries = events[events['type'] == 'Carry']
+    pressures = events[events['type'] == 'Pressure']
+    interceptions = events[events['type'] == 'Interception']
+    
+    successful_pressures = pressures[pressures['counterpress'] == True]
+
+    key_stats = {
+        'ball_recoveries': len(ball_recoveries),
+        'carries': len(carries),
+        'pressures': len(pressures),
+        'successful_pressures': len(successful_pressures),
+        'pressure_success_rate': len(successful_pressures) / len(pressures) if len(pressures) > 0 else 0,
+        'interceptions': len(interceptions)
+    }
+    
+    # Get top transition players
+    recoveries_per_player = ball_recoveries['player'].value_counts()
+    carries_per_player = carries['player'].value_counts()
+    pressures_per_player = pressures['player'].value_counts()
+    
+    transition_stats = pd.DataFrame({
+        'ball_recoveries': recoveries_per_player,
+        'carries': carries_per_player,
+        'pressures': pressures_per_player
+    }).fillna(0)
+    
+    transition_stats['total_transition_actions'] = (transition_stats['ball_recoveries'] + 
+                                                   transition_stats['carries'] + 
+                                                   transition_stats['pressures'])
+    
+    top_transition_players = transition_stats.nlargest(3, 'total_transition_actions')
+
+    return {
+        'key_stats': key_stats,
+        'top_transition_players': top_transition_players
+    }
+
+def get_general_set_pieces_analysis(events):
+    """
+    Obtiene análisis de pelota parada general del partido para ambos equipos.
+    
+    Args:
+        creds: Credenciales de la API
+        match_id: ID del partido
+        
+    Returns:
+        dict: Diccionario con estadísticas de pelota parada generales
+    """
+    
+    free_kicks = events[events['type'] == 'Foul Won']
+
+    # Analyze set pieces using play_pattern column
+    corners = events[(events['play_pattern'] == 'From Corner') & (events['type'] == 'Pass')]
+
+    shots_from_free_kicks = events[(events['type'] == 'Shot') & (events['play_pattern'] == 'From Free Kick')]
+    
+    # Get passes from free kicks by checking next events after free kicks
+    passes_from_free_kicks = pd.DataFrame()
+    for _, free_kick in free_kicks.iterrows():
+        # Get the next event after this free kick
+        next_event = events[events['id'] > free_kick['id']].iloc[0] if len(events[events['id'] > free_kick['id']]) > 0 else None
+        if next_event is not None and next_event['type'] == 'Pass' and pd.isna(next_event.get('pass_outcome')):
+            passes_from_free_kicks = pd.concat([passes_from_free_kicks, pd.DataFrame([next_event])], ignore_index=True)
+    
+    # Get shots from corners by checking next events after corners
+    shots_from_corners = pd.DataFrame()
+    for _, corner in corners.iterrows():
+        # Get the next event after this corner
+        next_event = events[events['id'] > corner['id']].iloc[0] if len(events[events['id'] > corner['id']]) > 0 else None
+        if next_event is not None and next_event['type'] == 'Shot':
+            shots_from_corners = pd.concat([shots_from_corners, pd.DataFrame([next_event])], ignore_index=True)
+    
+    print(shots_from_corners)
+    
+    
+    # Analyze passes from set pieces
+    
+    # Analyze successful passes from set pieces
+    if not corners.empty:
+        successful_passes_corners = corners[corners['pass_outcome'].isna()]
+    else:
+        successful_passes_corners = pd.DataFrame()
+    if not passes_from_free_kicks.empty:
+        successful_passes_free_kicks = passes_from_free_kicks[passes_from_free_kicks['pass_outcome'].isna()]
+    else:
+        successful_passes_free_kicks = pd.DataFrame()
+    
+    # Analyze goals from set pieces
+    if not shots_from_corners.empty:
+        goals_from_corners = shots_from_corners[shots_from_corners['shot_outcome'].apply(lambda x: x == 'Goal' if x else False)]
+    else:
+        goals_from_corners = pd.DataFrame()
+    if not shots_from_free_kicks.empty:
+        goals_from_free_kicks = shots_from_free_kicks[shots_from_free_kicks['type'].apply(lambda x: x == 'Goal' if x else False)]
+    else:
+        goals_from_free_kicks = pd.DataFrame()
+    
+    # Analyze crosses
+    crosses = events[events['pass_cross'] == True]
+    successful_crosses = crosses[crosses['pass_outcome'].isna()]
+    
+    key_stats = {
+        'total_set_piece_events': len(corners) + len(free_kicks),
+        'corners': len(corners),
+        'free_kicks': len(free_kicks),
+        'shots_from_free_kicks': len(shots_from_free_kicks),
+        'goals_from_corners': len(goals_from_corners),
+        'goals_from_free_kicks': len(goals_from_free_kicks),
+        'total_goals_from_set_pieces': len(goals_from_corners) + len(goals_from_free_kicks),
+        'passes_from_free_kicks': len(passes_from_free_kicks),
+        'successful_passes_corners': len(successful_passes_corners),
+        'successful_passes_free_kicks': len(successful_passes_free_kicks),
+        'free_kick_pass_accuracy': len(successful_passes_free_kicks) / len(passes_from_free_kicks) if len(passes_from_free_kicks) > 0 else 0,
+        'crosses': len(crosses),
+        'successful_crosses': len(successful_crosses),
+        'cross_accuracy': len(successful_crosses) / len(crosses) if len(crosses) > 0 else 0
+    }
+
+    return {
+        'key_stats': key_stats,
+    }
+
+def get_offensive_analysis(events):
+    """
+    Obtiene análisis ofensivo detallado del partido para Audax Italiano.
+    
+    Args:
+        creds: Credenciales de la API
+        match_id: ID del partido
+        
+    Returns:
+        dict: Diccionario con estadísticas ofensivas y top jugadores
+    """
+    events_audax = events[events['team'] == 'Audax Italiano']
+    shots = events_audax[events_audax['type'] == 'Shot']
+    passes = events_audax[events_audax['type'] == 'Pass']
+    
+    
+    # Successful passes are those where pass_outcome is NaN (no outcome means successful)
+    successful_passes = passes[passes['pass_outcome'].isna()]
+    
+    # Long passes are those with pass_length > 20
+    long_passes = passes[passes['pass_length'] > 20]
+    successful_long_passes = successful_passes[successful_passes['pass_length'] > 20]
+
+    key_stats = {
+        'total_shots': len(shots),
+        'total_passes': len(passes),
+        'successful_passes': len(successful_passes),
+        'pass_accuracy': len(successful_passes) / len(passes) if len(passes) > 0 else 0,
+        'long_passes': len(long_passes),
+        'successful_long_passes': len(successful_long_passes),
+        'long_pass_accuracy': len(successful_long_passes) / len(long_passes) if len(long_passes) > 0 else 0,
+        'xG_total': shots['shot_statsbomb_xg'].sum().round(2) if 'shot_statsbomb_xg' in shots.columns else 0
+    }
+
+    # Get top shooters
+    top_shooters = shots['player'].apply(lambda x: x.get('name') if isinstance(x, dict) else x).value_counts().head(3)
+    
+    # Calculate passing statistics for each player
+    # Extract player names from passes
+    passes['player_name'] = passes['player'].apply(lambda x: x.get('name') if isinstance(x, dict) else x)
+    successful_passes['player_name'] = successful_passes['player'].apply(lambda x: x.get('name') if isinstance(x, dict) else x)
+    
+    # Count total passes and successful passes per player
+    total_passes_per_player = passes['player_name'].value_counts()
+    successful_passes_per_player = successful_passes['player_name'].value_counts()
+    
+    # Create a DataFrame with passing statistics
+    passing_stats = pd.DataFrame({
+        'total_passes': total_passes_per_player,
+        'successful_passes': successful_passes_per_player
+    }).fillna(0)
+    
+    # Calculate pass success percentage
+    passing_stats['pass_success_pct'] = (passing_stats['successful_passes'] / passing_stats['total_passes'] * 100).round(1)
+    
+    # Get top passers by total passes
+    top_passers_total = passing_stats.nlargest(3, 'total_passes')
+    
+    # Get top passers by success percentage (minimum 5 passes)
+    top_passers_accuracy = passing_stats[passing_stats['total_passes'] >= 5].nlargest(3, 'pass_success_pct')
+
+
+    return {
+        'key_stats': key_stats,
+        'top_shooters': top_shooters,
+        'top_passers_total': top_passers_total,
+        'top_passers_accuracy': top_passers_accuracy,
+        'all_passing_stats': passing_stats
+    }
+
+def get_defensive_analysis(events):
+    """
+    Obtiene análisis defensivo detallado del partido para Audax Italiano.
+    
+    Args:
+        creds: Credenciales de la API
+        match_id: ID del partido
+        
+    Returns:
+        dict: Diccionario con estadísticas defensivas y top defensores
+    """
+    events_audax = events[events['team'] == 'Audax Italiano']
+    
+    # Get different types of defensive events
+    pressures = events_audax[events_audax['type'] == 'Pressure']
+    duels = events_audax[events_audax['type'] == 'Duel']
+    blocks = events_audax[events_audax['type'] == 'Block']
+    interceptions = events_audax[events_audax['type'] == 'Interception']
+    ball_recoveries = events_audax[events_audax['type'] == 'Ball Recovery']
+    clearances = events_audax[events_audax['type'] == 'Clearance']
+    
+
+    successful_pressures = pressures[pressures['counterpress'] == True]
+
+
+    won_duels = duels[duels['duel_outcome'].apply(lambda x: x == 'Won' or x == "Success In Play")]
+    
+    # Aerial duels
+    aerial_duels = len(events[events['duel_type'].apply(lambda x: x == 'Aerial Lost')])
+    won_aerial_duels = aerial_duels - len(duels[duels['duel_type'].apply(lambda x: x == 'Aerial Lost')])
+
+    key_stats = {
+        'pressures': len(pressures),
+        'successful_pressures': len(successful_pressures),
+        'pressure_success_rate': len(successful_pressures) / len(pressures) if len(pressures) > 0 else 0,
+        'duels': len(duels),
+        'won_duels': len(won_duels),
+        'duel_success_rate': len(won_duels) / len(duels) if len(duels) > 0 else 0,
+        'aerial_duels': aerial_duels,
+        'won_aerial_duels': won_aerial_duels,
+        'aerial_success_rate': won_aerial_duels / aerial_duels if aerial_duels > 0 else 0,
+        'blocks': len(blocks),
+        'interceptions': len(interceptions),
+        'ball_recoveries': len(ball_recoveries),
+        'clearances': len(clearances)
+    }
+
+
+
+
+    # Count defensive actions per player
+    pressures_per_player = pressures['player'].value_counts()
+    successful_pressures_per_player = successful_pressures['player'].value_counts()
+    duels_per_player = duels['player'].value_counts()
+    won_duels_per_player = won_duels['player'].value_counts()
+    blocks_per_player = blocks['player'].value_counts()
+    interceptions_per_player = interceptions['player'].value_counts()
+    ball_recoveries_per_player = ball_recoveries['player'].value_counts()
+    clearances_per_player = clearances['player'].value_counts()
+
+    
+    # Create comprehensive defensive stats DataFrame
+    defensive_stats = pd.DataFrame({
+        'pressures': pressures_per_player,
+        'successful_pressures': successful_pressures_per_player,
+        'duels': duels_per_player,
+        'won_duels': won_duels_per_player,
+        'blocks': blocks_per_player,
+        'interceptions': interceptions_per_player,
+        'ball_recoveries': ball_recoveries_per_player,
+        'clearances': clearances_per_player
+    }).fillna(0)
+    
+    # Calculate success rates
+    defensive_stats['pressure_success_rate'] = (defensive_stats['successful_pressures'] / defensive_stats['pressures'] * 100).round(1)
+    defensive_stats['duel_success_rate'] = (defensive_stats['won_duels'] / defensive_stats['duels'] * 100).round(1)
+    
+    # Calculate total defensive actions
+    defensive_stats['total_defensive_actions'] = (defensive_stats['pressures'] + defensive_stats['duels'] + 
+                                                 defensive_stats['blocks'] + defensive_stats['interceptions'] + 
+                                                 defensive_stats['ball_recoveries'] + defensive_stats['clearances'])
+    
+    # Get top defenders by different metrics
+    top_defenders_total_actions = defensive_stats.nlargest(3, 'total_defensive_actions')
+    top_defenders_pressures = defensive_stats.nlargest(3, 'pressures')
+    top_defenders_duels = defensive_stats.nlargest(3, 'duels')
+    top_defenders_interceptions = defensive_stats.nlargest(3, 'interceptions')
+
+
+    return {
+        'key_stats': key_stats,
+        'top_defenders_total_actions': top_defenders_total_actions,
+        'top_defenders_pressures': top_defenders_pressures,
+        'top_defenders_duels': top_defenders_duels,
+        'top_defenders_interceptions': top_defenders_interceptions,
+        'all_defensive_stats': defensive_stats
+    }
+
+def get_transitions_analysis(events):
+    """
+    Obtiene análisis de transiciones del partido para Audax Italiano.
+    
+    Args:
+        creds: Credenciales de la API
+        match_id: ID del partido
+        
+    Returns:
+        dict: Diccionario con estadísticas de transiciones
+    """
+    events_audax = events[events['team'] == 'Audax Italiano']
+    
+    # Get transition-related events
+    ball_recoveries = events_audax[events_audax['type'] == 'Ball Recovery']
+    carries = events_audax[events_audax['type'] == 'Carry']
+    pressures = events_audax[events_audax['type'] == 'Pressure']
+    interceptions = events_audax[events_audax['type'] == 'Interception']
+    
+    # Filter successful pressures (counterpress)
+    successful_pressures = pressures[pressures['counterpress'] == True]
+    
+    # Analyze carries by field zones
+    # Assuming location is [x, y] where x is distance from goal (0-100)
+    carries_from_def_3rd = carries[carries['location'].apply(lambda x: x[0] < 33 if x else False)]
+    carries_from_mid_3rd = carries[carries['location'].apply(lambda x: 33 <= x[0] <= 66 if x else False)]
+    carries_from_att_3rd = carries[carries['location'].apply(lambda x: x[0] > 66 if x else False)]
+    
+    # Analyze ball recoveries by field zones
+    recoveries_in_def_3rd = ball_recoveries[ball_recoveries['location'].apply(lambda x: x[0] < 33 if x else False)]
+    recoveries_in_mid_3rd = ball_recoveries[ball_recoveries['location'].apply(lambda x: 33 <= x[0] <= 66 if x else False)]
+    recoveries_in_att_3rd = ball_recoveries[ball_recoveries['location'].apply(lambda x: x[0] > 66 if x else False)]
+
+    key_stats = {
+        'ball_recoveries': len(ball_recoveries),
+        'recoveries_def_3rd': len(recoveries_in_def_3rd),
+        'recoveries_mid_3rd': len(recoveries_in_mid_3rd),
+        'recoveries_att_3rd': len(recoveries_in_att_3rd),
+        'carries': len(carries),
+        'carries_from_def_3rd': len(carries_from_def_3rd),
+        'carries_from_mid_3rd': len(carries_from_mid_3rd),
+        'carries_from_att_3rd': len(carries_from_att_3rd),
+        'pressures': len(pressures),
+        'successful_pressures': len(successful_pressures),
+        'pressure_success_rate': len(successful_pressures) / len(pressures) if len(pressures) > 0 else 0,
+        'interceptions': len(interceptions)
+    }
+    
+    # Count transition actions per player
+    recoveries_per_player = ball_recoveries['player'].value_counts()
+    carries_per_player = carries['player'].value_counts()
+    pressures_per_player = pressures['player'].value_counts()
+    successful_pressures_per_player = successful_pressures['player'].value_counts()
+    interceptions_per_player = interceptions['player'].value_counts()
+    
+    # Create comprehensive transition stats DataFrame
+    transition_stats = pd.DataFrame({
+        'ball_recoveries': recoveries_per_player,
+        'carries': carries_per_player,
+        'pressures': pressures_per_player,
+        'successful_pressures': successful_pressures_per_player,
+        'interceptions': interceptions_per_player
+    }).fillna(0)
+    
+    # Calculate success rates
+    transition_stats['pressure_success_rate'] = (transition_stats['successful_pressures'] / transition_stats['pressures'] * 100).round(1)
+    
+    # Calculate total transition actions
+    transition_stats['total_transition_actions'] = (transition_stats['ball_recoveries'] + transition_stats['carries'] + 
+                                                   transition_stats['pressures'] + transition_stats['interceptions'])
+    
+    # Get top players by different transition metrics
+    top_transition_players = transition_stats.nlargest(3, 'total_transition_actions')
+    top_recovery_players = transition_stats.nlargest(3, 'ball_recoveries')
+    top_carry_players = transition_stats.nlargest(3, 'carries')
+    top_pressure_players = transition_stats.nlargest(3, 'pressures')
+
+    return {
+        'key_stats': key_stats,
+        'top_transition_players': top_transition_players,
+        'top_recovery_players': top_recovery_players,
+        'top_carry_players': top_carry_players,
+        'top_pressure_players': top_pressure_players,
+        'all_transition_stats': transition_stats
+    }
+
+def get_set_pieces_analysis(events):
+    """
+    Obtiene análisis de pelota parada general del partido para ambos equipos.
+    
+    Args:
+        creds: Credenciales de la API
+        match_id: ID del partido
+        
+    Returns:
+        dict: Diccionario con estadísticas de pelota parada generales
+    """
+
+    events = events[events['team'] == 'Audax Italiano'].reset_index(drop=True)
+    
+    free_kicks = events[events['type'] == 'Foul Won']
+
+    # Analyze set pieces using play_pattern column
+    corners = events[(events['play_pattern'] == 'From Corner') & (events['type'] == 'Pass')]
+
+    shots_from_free_kicks = events[(events['type'] == 'Shot') & (events['play_pattern'] == 'From Free Kick')]
+    
+    # Get passes from free kicks by checking next events after free kicks
+    passes_from_free_kicks = pd.DataFrame()
+    for _, free_kick in free_kicks.iterrows():
+        # Get the next event after this free kick
+        next_event = events[events['id'] > free_kick['id']].iloc[0] if len(events[events['id'] > free_kick['id']]) > 0 else None
+        if next_event is not None and next_event['type'] == 'Pass' and pd.isna(next_event.get('pass_outcome')):
+            passes_from_free_kicks = pd.concat([passes_from_free_kicks, pd.DataFrame([next_event])], ignore_index=True)
+    
+    # Get shots from corners by checking next events after corners
+    shots_from_corners = pd.DataFrame()
+    for _, corner in corners.iterrows():
+        # Get the next event after this corner
+        next_event = events[events['id'] > corner['id']].iloc[0] if len(events[events['id'] > corner['id']]) > 0 else None
+        if next_event is not None and next_event['type'] == 'Shot':
+            shots_from_corners = pd.concat([shots_from_corners, pd.DataFrame([next_event])], ignore_index=True)
+    
+    print(shots_from_corners)
+    
+    
+    # Analyze passes from set pieces
+    
+    # Analyze successful passes from set pieces
+    if not corners.empty:
+        successful_passes_corners = corners[corners['pass_outcome'].isna()]
+    else:
+        successful_passes_corners = pd.DataFrame()
+    if not passes_from_free_kicks.empty:
+        successful_passes_free_kicks = passes_from_free_kicks[passes_from_free_kicks['pass_outcome'].isna()]
+    else:
+        successful_passes_free_kicks = pd.DataFrame()
+    
+    # Analyze goals from set pieces
+    if not shots_from_corners.empty:
+        goals_from_corners = shots_from_corners[shots_from_corners['shot_outcome'].apply(lambda x: x == 'Goal' if x else False)]
+    else:
+        goals_from_corners = pd.DataFrame()
+    if not shots_from_free_kicks.empty:
+        goals_from_free_kicks = shots_from_free_kicks[shots_from_free_kicks['type'].apply(lambda x: x == 'Goal' if x else False)]
+    else:
+        goals_from_free_kicks = pd.DataFrame()
+    
+    # Analyze crosses
+    crosses = events[events['pass_cross'] == True]
+    successful_crosses = crosses[crosses['pass_outcome'].isna()]
+    
+    key_stats = {
+        'total_set_piece_events': len(corners) + len(free_kicks),
+        'corners': len(corners),
+        'free_kicks': len(free_kicks),
+        'shots_from_free_kicks': len(shots_from_free_kicks),
+        'goals_from_corners': len(goals_from_corners),
+        'goals_from_free_kicks': len(goals_from_free_kicks),
+        'total_goals_from_set_pieces': len(goals_from_corners) + len(goals_from_free_kicks),
+        'passes_from_free_kicks': len(passes_from_free_kicks),
+        'successful_passes_corners': len(successful_passes_corners),
+        'successful_passes_free_kicks': len(successful_passes_free_kicks),
+        'free_kick_pass_accuracy': len(successful_passes_free_kicks) / len(passes_from_free_kicks) if len(passes_from_free_kicks) > 0 else 0,
+        'crosses': len(crosses),
+        'successful_crosses': len(successful_crosses),
+        'cross_accuracy': len(successful_crosses) / len(crosses) if len(crosses) > 0 else 0
+    }
+
+    return {
+        'key_stats': key_stats,
+    }
